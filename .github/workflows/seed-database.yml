@@ -1,0 +1,28 @@
+name: Seed Database
+
+# "workflow_dispatch" means this only runs when someone clicks the
+# "Run workflow" button on the Actions tab — it never runs automatically.
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        working-directory: wms-backend
+        run: npm install
+
+      - name: Run the seed script
+        working-directory: wms-backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: npm run seed
