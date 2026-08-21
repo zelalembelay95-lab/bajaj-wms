@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Plus, Bike, Loader2, X } from "lucide-react";
 import { api, ApiRequestError } from "../../lib/apiClient";
 import type { Vehicle } from "../../types";
+import { useAuth } from "../../context/AuthContext";
 
 const MODEL_FAMILIES = ["Pulsar", "Discover", "Platina", "Avenger", "Dominar", "CT", "Boxer", "RE_Auto", "Qute"];
 const STATUS_COLORS: Record<string, string> = {
@@ -15,6 +16,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function VehiclesAdmin() {
+  const { user } = useAuth();
+  const canEdit = user?.role !== "executive";
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,13 +43,15 @@ export function VehiclesAdmin() {
           <p className="font-mono text-[11px] uppercase tracking-widest text-signal-teal">Fleet</p>
           <h1 className="font-display text-2xl font-semibold md:text-3xl">Vehicles</h1>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 rounded-md bg-signal-amber px-4 py-2.5 text-sm font-semibold text-graphite-950 hover:opacity-90"
-        >
-          <Plus size={16} />
-          Add Vehicle
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 rounded-md bg-signal-amber px-4 py-2.5 text-sm font-semibold text-graphite-950 hover:opacity-90"
+          >
+            <Plus size={16} />
+            Add Vehicle
+          </button>
+        )}
       </header>
 
       {error && (
