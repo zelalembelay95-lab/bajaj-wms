@@ -9,6 +9,8 @@ import { PickingSlip } from "./components/picking/PickingSlip";
 import { VehiclesAdmin } from "./components/admin/VehiclesAdmin";
 import { SparePartsAdmin } from "./components/admin/SparePartsAdmin";
 import { UsersAdmin } from "./components/admin/UsersAdmin";
+import { BranchesAdmin } from "./components/admin/BranchesAdmin";
+import { PurchaseOrdersView } from "./components/purchaseorders/PurchaseOrdersView";
 
 function AuthenticatedApp() {
   const [view, setView] = useState<ViewId>("dashboard");
@@ -21,7 +23,9 @@ function AuthenticatedApp() {
       {view === "lowstock" && <LowStockCommandCenter onApiHealth={setApiOnline} />}
       {view === "picking" && <PickingSlip onApiHealth={setApiOnline} />}
       {view === "vehicles" && <VehiclesAdmin />}
+      {view === "purchaseOrders" && <PurchaseOrdersView />}
       {view === "parts" && <SparePartsAdmin />}
+      {view === "branches" && <BranchesAdmin />}
       {view === "users" && <UsersAdmin />}
     </AppShell>
   );
