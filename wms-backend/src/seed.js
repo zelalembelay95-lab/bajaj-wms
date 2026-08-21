@@ -2,34 +2,49 @@ require("dotenv").config();
 const { connectDB } = require("./config/db");
 const mongoose = require("mongoose");
 
+const Branch = require("./models/Branch");
 const User = require("./models/User");
 const Vehicle = require("./models/Vehicle");
 const SparePart = require("./models/SparePart");
 const WarehouseLocation = require("./models/WarehouseLocation");
 const InventorySnapshot = require("./models/InventorySnapshot");
 
+const BRANCH_CODE = "AA-MAIN";
+
 async function seed() {
   await connectDB();
 
-  // --- Admin account -------------------------------------------------
-  const adminEmail = "admin@bajajwms.local";
-  const existingAdmin = await User.findOne({ email: adminEmail });
-  if (!existingAdmin) {
-    await User.create({
-      name: "System Admin",
-      email: adminEmail,
-      passwordHash: await User.hashPassword("ChangeMe123!"),
-      role: "admin",
-    });
-    console.log(`Created admin login: ${adminEmail} / ChangeMe123!  <-- change this password after first login`);
+  // --- Branch ------------------------------------------------------------
+  // Just one branch today — the whole point of tagging every record with
+  // branchCode is that adding a second branch later is just: create a new
+  // Branch doc + a Manager/Employee assigned to it. No schema change.
+  await Branch.findOneAndUpdate(
+    { code: BRANCH_CODE },
+    { code: BRANCH_CODE, name: "Addis Ababa - Main Warehouse", city: "Addis Ababa" },
+    { upsert: true }
+  );
+
+  // --- Accounts ------------------------------------------------------------
+  const accounts = [
+    { name: "System Admin", email: "admin@bajajwms.local", role: "admin", jobTitle: "System Administrator", branchCode: null },
+    { name: "General Manager", email: "ceo@bajajwms.local", role: "executive", jobTitle: "CEO", branchCode: null },
+    { name: "Warehouse Manager", email: "manager@bajajwms.local", role: "manager", jobTitle: "Branch Manager", branchCode: BRANCH_CODE },
+    { name: "Store Keeper", email: "store@bajajwms.local", role: "employee", jobTitle: "Store Keeper", branchCode: BRANCH_CODE },
+  ];
+  for (const acc of accounts) {
+    const existing = await User.findOne({ email: acc.email });
+    if (!existing) {
+      await User.create({ ...acc, passwordHash: await User.hashPassword("ChangeMe123!") });
+      console.log(`Created ${acc.role} login: ${acc.email} / ChangeMe123!`);
+    }
   }
 
   // --- Warehouse locations --------------------------------------------
   const locations = [
-    { locationCode: "Z1-BULK-A12", zoneType: "BULK_FLOOR_STORAGE", zoneCode: "Z1", zoneLabel: "Bulk Floor Storage", displayLabel: "Bulk Floor A / Bay 12", capacity: { maxUnits: 40 }, storesVehicles: true },
-    { locationCode: "Z2-A03-R02-S4", zoneType: "SHELVING_STANDARD", zoneCode: "Z2", zoneLabel: "Standard Shelving", aisle: "A03", rack: "R02", shelf: "S4", displayLabel: "Z2 / A03 / R02 / S4", capacity: { maxUnits: 500 } },
-    { locationCode: "Z3-A01-R05-S2-BIN07", zoneType: "HIGH_DENSITY_MICRO_BIN", zoneCode: "Z3", zoneLabel: "High-Density Micro-Bins", aisle: "A01", rack: "R05", shelf: "S2", bin: "BIN-07", displayLabel: "Z3 / A01 / R05 / S2 / BIN-07", capacity: { maxUnits: 5000 }, allowedCategory: "Fasteners_Consumables" },
-    { locationCode: "Z4-A02-R01-S1", zoneType: "HAZMAT_CAGE", zoneCode: "Z4", zoneLabel: "Hazmat Cage", aisle: "A02", rack: "R01", shelf: "S1", displayLabel: "Z4 / A02 / R01 / S1", capacity: { maxUnits: 200 }, isHazmatApproved: true },
+    { locationCode: "Z1-BULK-A12", branchCode: BRANCH_CODE, zoneType: "BULK_FLOOR_STORAGE", zoneCode: "Z1", zoneLabel: "Bulk Floor Storage", displayLabel: "Bulk Floor A / Bay 12", capacity: { maxUnits: 40 }, storesVehicles: true },
+    { locationCode: "Z2-A03-R02-S4", branchCode: BRANCH_CODE, zoneType: "SHELVING_STANDARD", zoneCode: "Z2", zoneLabel: "Standard Shelving", aisle: "A03", rack: "R02", shelf: "S4", displayLabel: "Z2 / A03 / R02 / S4", capacity: { maxUnits: 500 } },
+    { locationCode: "Z3-A01-R05-S2-BIN07", branchCode: BRANCH_CODE, zoneType: "HIGH_DENSITY_MICRO_BIN", zoneCode: "Z3", zoneLabel: "High-Density Micro-Bins", aisle: "A01", rack: "R05", shelf: "S2", bin: "BIN-07", displayLabel: "Z3 / A01 / R05 / S2 / BIN-07", capacity: { maxUnits: 5000 }, allowedCategory: "Fasteners_Consumables" },
+    { locationCode: "Z4-A02-R01-S1", branchCode: BRANCH_CODE, zoneType: "HAZMAT_CAGE", zoneCode: "Z4", zoneLabel: "Hazmat Cage", aisle: "A02", rack: "R01", shelf: "S1", displayLabel: "Z4 / A02 / R01 / S1", capacity: { maxUnits: 200 }, isHazmatApproved: true },
   ];
   for (const loc of locations) {
     await WarehouseLocation.findOneAndUpdate({ locationCode: loc.locationCode }, loc, { upsert: true });
@@ -37,15 +52,15 @@ async function seed() {
 
   // --- Vehicles --------------------------------------------------------
   const vehicles = [
-    { chassisNumber: "MD2A11AZ1PWB12345", engineNumber: "DZPWB1234567", modelFamily: "Pulsar", variant: "Pulsar NS200", vehicleType: "Motorcycle", color: "Pearl White", productionYear: 2026, status: "IN_STOCK", locationCode: "Z1-BULK-A12", invoiceValue: 148500 },
-    { chassisNumber: "MD2D62CZ2PCB98765", engineNumber: "JBCB9876543", modelFamily: "Discover", variant: "Discover 125", vehicleType: "Motorcycle", color: "Ebony Black", productionYear: 2026, status: "ALLOCATED", locationCode: "Z1-BULK-A12", invoiceValue: 92000 },
-    { chassisNumber: "MD2G51EZ3RAB55221", engineNumber: "FKAB5522109", modelFamily: "RE_Auto", variant: "RE Compact 4S", vehicleType: "ThreeWheeler", color: "Yellow/Black", productionYear: 2026, status: "PDI_PENDING", locationCode: "Z1-BULK-A12", invoiceValue: 231000 },
+    { chassisNumber: "MD2A11AZ1PWB12345", engineNumber: "DZPWB1234567", branchCode: BRANCH_CODE, modelFamily: "Pulsar", variant: "Pulsar NS200", vehicleType: "Motorcycle", color: "Pearl White", productionYear: 2026, status: "IN_STOCK", locationCode: "Z1-BULK-A12", invoiceValue: 148500 },
+    { chassisNumber: "MD2D62CZ2PCB98765", engineNumber: "JBCB9876543", branchCode: BRANCH_CODE, modelFamily: "Discover", variant: "Discover 125", vehicleType: "Motorcycle", color: "Ebony Black", productionYear: 2026, status: "ALLOCATED", locationCode: "Z1-BULK-A12", invoiceValue: 92000 },
+    { chassisNumber: "MD2G51EZ3RAB55221", engineNumber: "FKAB5522109", branchCode: BRANCH_CODE, modelFamily: "RE_Auto", variant: "RE Compact 4S", vehicleType: "ThreeWheeler", color: "Yellow/Black", productionYear: 2026, status: "PDI_PENDING", locationCode: "Z1-BULK-A12", invoiceValue: 231000 },
   ];
   for (const v of vehicles) {
     await Vehicle.findOneAndUpdate({ chassisNumber: v.chassisNumber }, v, { upsert: true });
   }
 
-  // --- Spare parts -------------------------------------------------------
+  // --- Spare parts (company-wide catalog — no branchCode) ----------------
   const parts = [
     { sku: "SP-ENG-000482", oemPartNumber: "290569130", partName: "Piston Kit STD 150cc", category: "Engine", unitOfMeasure: "SET",
       crossReferences: [{ refPartNumber: "290569125", relationship: "SUPERSEDES" }, { refPartNumber: "AM-PST-150-STD", relationship: "AFTERMARKET_EQUIVALENT" }],
@@ -96,6 +111,7 @@ async function seed() {
       {
         sku: s.sku,
         locationCode: s.locationCode,
+        branchCode: BRANCH_CODE,
         partSnapshot: { oemPartNumber: part.oemPartNumber, partName: part.partName, category: part.category, unitOfMeasure: part.unitOfMeasure, isHeavy: part.dimensions.isHeavy },
         locationSnapshot: { zoneType: loc.zoneType, displayLabel: loc.displayLabel },
         totalQty: s.totalQty,
@@ -111,7 +127,12 @@ async function seed() {
     );
   }
 
-  console.log("Seed complete.");
+  console.log("\nSeed complete. Logins (all use password ChangeMe123! until changed):");
+  console.log("  admin@bajajwms.local    — Admin (system/IT)");
+  console.log("  ceo@bajajwms.local      — Executive (company-wide read-only)");
+  console.log("  manager@bajajwms.local  — Manager (Addis Ababa - Main branch)");
+  console.log("  store@bajajwms.local    — Employee / Store Keeper (Addis Ababa - Main branch)");
+
   await mongoose.disconnect();
 }
 
