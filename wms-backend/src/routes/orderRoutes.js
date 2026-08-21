@@ -3,6 +3,7 @@ const InventorySnapshot = require("../models/InventorySnapshot");
 const WarehouseLocation = require("../models/WarehouseLocation");
 const { requireAuth } = require("../middleware/auth");
 const { asyncHandler, ApiError } = require("../middleware/errorHandler");
+const { branchFilter } = require("../middleware/branchScope");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -18,8 +19,10 @@ function compareByWarehousePath(a, b) {
   );
 }
 
-async function allocateSku(sku, qtyRequested) {
-  const snapshots = await InventorySnapshot.find({ sku, availableQty: { $gt: 0 } }).sort({ availableQty: -1 }).limit(20);
+async function allocateSku(sku, qtyRequested, branchScope) {
+  const snapshots = await InventorySnapshot.find({ sku, availableQty: { $gt: 0 }, ...branchScope })
+    .sort({ availableQty: -1 })
+    .limit(20);
 
   const stops = [];
   let remaining = qtyRequested;
@@ -65,12 +68,13 @@ router.post(
 
     const route = [];
     const shortages = [];
+    const scope = branchFilter(req.user, req.body.branch);
 
     for (const item of items) {
       if (!item.sku || !item.qtyRequested || item.qtyRequested <= 0) {
         throw new ApiError(400, `Invalid line item: ${JSON.stringify(item)}`, "BAD_REQUEST");
       }
-      const { stops, qtyAvailable } = await allocateSku(item.sku, item.qtyRequested);
+      const { stops, qtyAvailable } = await allocateSku(item.sku, item.qtyRequested, scope);
       route.push(...stops);
 
       const qtyPicked = stops.reduce((sum, s) => sum + s.qtyToPick, 0);
