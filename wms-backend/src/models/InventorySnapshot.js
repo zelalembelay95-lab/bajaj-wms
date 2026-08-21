@@ -4,6 +4,7 @@ const inventorySnapshotSchema = new mongoose.Schema(
   {
     sku: { type: String, required: true, uppercase: true, index: true },
     locationCode: { type: String, required: true, uppercase: true, index: true },
+    branchCode: { type: String, required: true, uppercase: true, index: true },
 
     // Denormalized so list views don't need a second query per row.
     partSnapshot: {
