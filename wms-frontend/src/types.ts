@@ -76,13 +76,22 @@ export interface PickListResponse {
   shortages: { sku: string; qtyRequested: number; qtyAvailable: number; qtyShort: number }[];
 }
 
-export type UserRole = "admin" | "employee";
+export type UserRole = "admin" | "executive" | "manager" | "employee";
+
+export interface Branch {
+  code: string;
+  name: string;
+  city?: string;
+  address?: string;
+}
 
 export interface AuthUser {
   _id: string;
   name: string;
   email: string;
   role: UserRole;
+  jobTitle?: string;
+  branchCode: string | null; // null for admin/executive — they're company-wide
   isActive: boolean;
   createdAt: string;
 }
@@ -106,6 +115,7 @@ export interface Vehicle {
   color: string;
   productionYear: number;
   status: VehicleStatus;
+  branchCode: string;
   locationCode?: string;
   invoiceValue?: number;
   createdAt: string;
@@ -127,13 +137,17 @@ export interface PurchaseOrder {
   sku: string;
   partName?: string;
   qty: number;
-  status: "DRAFT" | "SUBMITTED" | "RECEIVED" | "CANCELLED";
+  branchCode: string;
+  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "RECEIVED" | "CANCELLED";
   reason?: string;
   createdBy?: { name: string; email: string };
+  approvedBy?: { name: string; email: string } | null;
+  approvedAt?: string;
   createdAt: string;
 }
 
 export interface DashboardSummary {
+  scope: string; // "company-wide" or a branch code
   vehiclesInStock: number;
   activeSpareParts: number;
   lowStockAlerts: number;
@@ -145,4 +159,5 @@ export interface DashboardSummary {
     performedBy: string;
     timestamp: string;
   }[];
+  branches: Branch[]; // populated only for admin/executive — powers a branch switcher
 }
