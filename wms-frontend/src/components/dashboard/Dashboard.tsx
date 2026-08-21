@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bike, PackageCheck, AlertTriangle, Activity } from "lucide-react";
+import { Bike, PackageCheck, AlertTriangle, Activity, Building2 } from "lucide-react";
 import { api, ApiRequestError } from "../../lib/apiClient";
 import type { DashboardSummary } from "../../types";
 import { useAuth } from "../../context/AuthContext";
@@ -7,25 +7,53 @@ import { useAuth } from "../../context/AuthContext";
 export function Dashboard() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [branchFilter, setBranchFilter] = useState<string>(""); // "" = company-wide (admin/executive only)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    load(branchFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchFilter]);
+
+  function load(branch: string) {
+    setLoading(true);
+    const query = branch ? `?branch=${branch}` : "";
     api
-      .get<{ ok: true; summary: DashboardSummary }>("/api/dashboard/summary")
+      .get<{ ok: true; summary: DashboardSummary }>(`/api/dashboard/summary${query}`)
       .then((r) => setSummary(r.summary))
       .catch((err) => setError(err instanceof ApiRequestError ? err.message : "Could not load dashboard data"))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  const canSwitchBranch = user?.role === "admin" || user?.role === "executive";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
-      <header className="mb-6">
-        <p className="font-mono text-[11px] uppercase tracking-widest text-signal-teal">Overview</p>
-        <h1 className="font-display text-2xl font-semibold md:text-3xl">Welcome back, {user?.name?.split(" ")[0]}</h1>
-        <p className="mt-1 text-sm text-steel-400">
-          {user?.role === "admin" ? "Admin" : "Employee"} · {user?.email}
-        </p>
+      <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-signal-teal">Overview</p>
+          <h1 className="font-display text-2xl font-semibold md:text-3xl">Welcome back, {user?.name?.split(" ")[0]}</h1>
+          <p className="mt-1 text-sm text-steel-400">
+            {user?.jobTitle || user?.role} · {user?.email}
+          </p>
+        </div>
+
+        {canSwitchBranch && summary && summary.branches.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 size={16} className="text-steel-500" />
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="rounded-md border border-graphite-600 bg-graphite-800 px-3 py-2 text-sm text-paper focus:border-signal-teal"
+            >
+              <option value="">All Branches (Company-wide)</option>
+              {summary.branches.map((b) => (
+                <option key={b.code} value={b.code}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </header>
 
       {error && (
@@ -51,7 +79,9 @@ export function Dashboard() {
       <div className="mt-6 rounded-lg border border-graphite-700 bg-graphite-900 p-4 shadow-panel">
         <div className="mb-3 flex items-center gap-2">
           <Activity size={16} className="text-signal-teal" />
-          <h2 className="font-display text-sm font-semibold">Recent Stock Movements</h2>
+          <h2 className="font-display text-sm font-semibold">
+            Recent Stock Movements {summary?.scope && summary.scope !== "company-wide" && <span className="font-mono text-xs text-steel-500">· {summary.scope}</span>}
+          </h2>
         </div>
         {summary && summary.recentMovements.length > 0 ? (
           <ul className="flex flex-col divide-y divide-graphite-800">
