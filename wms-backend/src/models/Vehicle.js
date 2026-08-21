@@ -19,6 +19,7 @@ const vehicleSchema = new mongoose.Schema(
     manufacturingDate: Date,
     invoiceNumber: { type: String, trim: true },
     status: { type: String, enum: VEHICLE_STATUSES, default: "IN_STOCK" },
+    branchCode: { type: String, required: true, trim: true, uppercase: true, index: true },
     locationCode: { type: String, trim: true, uppercase: true },
     odometerKm: { type: Number, default: 0 },
     invoiceValue: Number,
