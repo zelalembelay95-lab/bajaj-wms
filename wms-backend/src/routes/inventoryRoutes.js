@@ -6,6 +6,7 @@ const InventorySnapshot = require("../models/InventorySnapshot");
 const StockMovement = require("../models/StockMovement");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { asyncHandler, ApiError } = require("../middleware/errorHandler");
+const { branchFilter, resolveWriteBranch, assertOwnBranch } = require("../middleware/branchScope");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -14,9 +15,9 @@ function normalize(raw) {
   return raw.trim().toUpperCase().replace(/[\s-]/g, "");
 }
 
-/** Finds an active bin matching the part's default zone/category with spare capacity. */
-async function assignBin(part) {
-  const candidates = await WarehouseLocation.find({ zoneType: part.defaultZoneType, isActive: true }).limit(20);
+/** Finds an active bin, IN THE GIVEN BRANCH, matching the part's default zone/category with spare capacity. */
+async function assignBin(part, branchCode) {
+  const candidates = await WarehouseLocation.find({ zoneType: part.defaultZoneType, branchCode, isActive: true }).limit(20);
   for (const loc of candidates) {
     if (loc.allowedCategory && loc.allowedCategory !== part.category) continue;
     const existing = await InventorySnapshot.findOne({ sku: part.sku, locationCode: loc.locationCode });
@@ -31,7 +32,7 @@ async function assignBin(part) {
 // -----------------------------------------------------------------------
 router.post(
   "/receive",
-  requireRole("admin", "employee"),
+  requireRole("admin", "manager", "employee"),
   asyncHandler(async (req, res) => {
     const items = req.body.items;
     if (!Array.isArray(items) || items.length === 0) {
@@ -39,15 +40,17 @@ router.post(
     }
     if (items.length > 200) throw new ApiError(400, "Max 200 lines per batch", "BATCH_TOO_LARGE");
 
+    const branchCode = resolveWriteBranch(req.user, req.body.branchCode);
+
     const results = [];
     for (const line of items) {
-      results.push(await receiveOneLine(line, req.user));
+      results.push(await receiveOneLine(line, req.user, branchCode));
     }
     res.json({ ok: true, results });
   })
 );
 
-async function receiveOneLine(line, user) {
+async function receiveOneLine(line, user, branchCode) {
   if (!line.oemPartNumber || !line.qty || line.qty <= 0) {
     return { oemPartNumber: line.oemPartNumber ?? "", status: "ERROR", message: "oemPartNumber and a positive qty are required" };
   }
@@ -64,19 +67,19 @@ async function receiveOneLine(line, user) {
 
   let location;
   if (line.locationCode) {
-    location = await WarehouseLocation.findOne({ locationCode: normalize(line.locationCode) });
+    location = await WarehouseLocation.findOne({ locationCode: normalize(line.locationCode), branchCode });
     if (!location) {
-      return { oemPartNumber: line.oemPartNumber, sku: part.sku, status: "ERROR", message: `Location ${line.locationCode} not found` };
+      return { oemPartNumber: line.oemPartNumber, sku: part.sku, status: "ERROR", message: `Location ${line.locationCode} not found in this branch` };
     }
   } else {
-    location = await assignBin(part);
+    location = await assignBin(part, branchCode);
   }
   if (!location) {
     return {
       oemPartNumber: line.oemPartNumber,
       sku: part.sku,
       status: "NO_BIN_AVAILABLE",
-      message: `No active ${part.defaultZoneType} bin with spare capacity for "${part.category}". Provision a new bin.`,
+      message: `No active ${part.defaultZoneType} bin with spare capacity for "${part.category}" in this branch. Provision a new bin.`,
     };
   }
 
@@ -100,6 +103,7 @@ async function receiveOneLine(line, user) {
         {
           sku: part.sku,
           locationCode: location.locationCode,
+          branchCode,
           partSnapshot: {
             oemPartNumber: part.oemPartNumber,
             partName: part.partName,
@@ -126,6 +130,7 @@ async function receiveOneLine(line, user) {
             snapshotId: snapshot._id,
             sku: part.sku,
             locationCode: location.locationCode,
+            branchCode,
             reasonCode: "PURCHASE_RECEIPT",
             qtyDelta: line.qty,
             totalQtyAfter: newTotal,
@@ -154,12 +159,14 @@ async function receiveOneLine(line, user) {
 
 // -----------------------------------------------------------------------
 // PUT /api/inventory/stock-adjust — explicit stock-in/out with audit log
+// Admin or Manager only — a Store Keeper can receive stock but not override
+// counts; a Manager approves/corrects, same as the org chart.
 // -----------------------------------------------------------------------
 const ADJUSTMENT_REASON_CODES = ["CYCLE_COUNT_ADJUSTMENT", "DAMAGE_WRITE_OFF", "RETURN_TO_STOCK", "TRANSFER_IN", "TRANSFER_OUT"];
 
 router.put(
   "/stock-adjust",
-  requireRole("admin"),
+  requireRole("admin", "manager"),
   asyncHandler(async (req, res) => {
     const { sku, locationCode, qtyDelta, reasonCode, notes } = req.body;
 
@@ -177,6 +184,8 @@ router.put(
       await session.withTransaction(async () => {
         const snap = await InventorySnapshot.findOne({ sku: normalize(sku), locationCode: normalize(locationCode) }).session(session);
         if (!snap) throw new ApiError(404, `No inventory snapshot for SKU "${sku}" at "${locationCode}"`, "SNAPSHOT_NOT_FOUND");
+
+        assertOwnBranch(req.user, snap.branchCode);
 
         const totalQtyAfter = snap.totalQty + qtyDelta;
         if (totalQtyAfter < 0) throw new ApiError(409, `Adjustment would drive totalQty negative (current ${snap.totalQty})`, "NEGATIVE_STOCK");
@@ -201,6 +210,7 @@ router.put(
               snapshotId: snap._id,
               sku: snap.sku,
               locationCode: snap.locationCode,
+              branchCode: snap.branchCode,
               reasonCode,
               qtyDelta,
               totalQtyAfter,
@@ -223,12 +233,13 @@ router.put(
 );
 
 // -----------------------------------------------------------------------
-// GET /api/inventory/low-stock — reorder alert feed
+// GET /api/inventory/low-stock — reorder alert feed, branch-scoped
 // -----------------------------------------------------------------------
 router.get(
   "/low-stock",
   asyncHandler(async (req, res) => {
-    const snapshots = await InventorySnapshot.find({ lowStockFlag: true }).sort({ availableQty: 1 }).limit(200);
+    const filter = { lowStockFlag: true, ...branchFilter(req.user, req.query.branch) };
+    const snapshots = await InventorySnapshot.find(filter).sort({ availableQty: 1 }).limit(200);
     const alerts = snapshots.map((s) => ({
       snapshotId: s._id,
       sku: s.sku,
@@ -236,6 +247,7 @@ router.get(
       partName: s.partSnapshot.partName,
       category: s.partSnapshot.category,
       locationCode: s.locationCode,
+      branchCode: s.branchCode,
       zoneType: s.locationSnapshot.zoneType,
       availableQty: s.availableQty,
       minThreshold: s.reorderPolicy.minThreshold,
@@ -247,7 +259,9 @@ router.get(
 );
 
 // -----------------------------------------------------------------------
-// GET /api/inventory/search?model=&q= — compatibility matrix
+// GET /api/inventory/search?model=&q=&branch= — compatibility matrix
+// The catalog itself (SpareParts) is company-wide/centralized; only the
+// per-bin availability is branch-scoped.
 // -----------------------------------------------------------------------
 router.get(
   "/search",
@@ -255,12 +269,12 @@ router.get(
     const { model, q } = req.query;
     const filter = { isActive: true };
 
-    if (model) filter["fitment.modelFamily"] = new RegExp(model.split(" ")[0], "i"); // e.g. "Pulsar" out of "Pulsar NS200"
+    if (model) filter["fitment.modelFamily"] = new RegExp(model.split(" ")[0], "i");
     if (q) filter.$text = { $search: q };
 
     const parts = await SparePart.find(filter).limit(100);
     const skus = parts.map((p) => p.sku);
-    const snapshots = await InventorySnapshot.find({ sku: { $in: skus } });
+    const snapshots = await InventorySnapshot.find({ sku: { $in: skus }, ...branchFilter(req.user, req.query.branch) });
 
     const rows = parts.map((part) => {
       const partSnapshots = snapshots.filter((s) => s.sku === part.sku);
