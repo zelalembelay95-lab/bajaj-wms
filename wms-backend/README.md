@@ -43,14 +43,20 @@ Fill in `.env`:
 - `JWT_SECRET` — generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
 - `CORS_ALLOWED_ORIGIN` — your frontend's URL (`http://localhost:5173` for local dev)
 
-Seed sample data and the first admin login:
+Seed sample data and the four starter accounts:
 ```bash
 npm run seed
 ```
-This prints an admin email/password (`admin@bajajwms.local` /
-`ChangeMe123!`) — **log in and change that password immediately** once
-you build a "change password" flow, or update the user directly in Atlas
-in the meantime.
+This creates one branch (`AA-MAIN`) and prints four logins, all with
+password `ChangeMe123!` — **change these immediately** once you build a
+"change password" flow, or update them directly in Atlas in the meantime:
+
+| Email | Role |
+|---|---|
+| `admin@bajajwms.local` | Admin |
+| `ceo@bajajwms.local` | Executive |
+| `manager@bajajwms.local` | Manager (AA-MAIN branch) |
+| `store@bajajwms.local` | Employee (AA-MAIN branch) |
 
 Run it:
 ```bash
@@ -76,26 +82,54 @@ Fine for a demo/internal tool; if that cold-start delay is a problem for
 real warehouse floor use, upgrade that one service to a paid instance —
 everything else (MongoDB Atlas M0, Cloudflare Pages) stays free either way.
 
+## Roles and branches
+
+Four roles, described in detail in the app itself, but in short:
+
+| Role | Scope | Can do |
+|---|---|---|
+| **admin** | Company-wide | Manage staff logins, parts catalog, warehouse bins, branches |
+| **executive** | Company-wide (read-only) | View dashboards/reports across every branch — no edit rights |
+| **manager** | One branch | Everything employee can, plus approve/cancel purchase orders and manually adjust stock, for their branch only |
+| **employee** | One branch | Receive stock, pick orders, add/edit vehicles, raise purchase orders — for their branch only |
+
+Every operational record (`Vehicle`, `WarehouseLocation`, `InventorySnapshot`,
+`StockMovement`, `PurchaseOrder`) carries a `branchCode`. The parts catalog
+(`SparePart`) is intentionally company-wide — one shared catalog, stock
+levels tracked per branch. `manager`/`employee` accounts are locked to
+their own branch on every request (`src/middleware/branchScope.js`);
+`admin`/`executive` see everything, or one branch at a time via a
+`?branch=` query param.
+
+Adding a second branch later is just: **POST /api/branches** (admin), then
+create a Manager/Employee account with that `branchCode`, then add
+warehouse locations for it. No migration needed — the schema's already there.
+
 ## API reference
 
-All routes except `/healthz`, `/api/auth/login`, and `/api/auth/register`
-(admin-only) require `Authorization: Bearer <token>` from a successful login.
+All routes except `/healthz` and `/api/auth/login` require
+`Authorization: Bearer <token>` from a successful login.
+`/api/auth/register` additionally requires an admin token.
 
 | Method | Path | Roles | Purpose |
 |---|---|---|---|
 | POST | `/api/auth/login` | — | Get a session token |
 | POST | `/api/auth/register` | admin | Create a new staff login |
 | GET | `/api/auth/me` | any | Validate the stored token on page load |
-| GET | `/api/dashboard/summary` | any | Landing-page stats |
-| GET/POST/PUT | `/api/vehicles` | any / admin+employee | Fleet records |
-| GET/POST/PUT | `/api/spare-parts` | any / admin | Parts catalog |
+| GET | `/api/dashboard/summary?branch=` | any | Landing-page stats, branch-scoped or company-wide |
+| GET | `/api/branches` | any | List branches |
+| POST | `/api/branches` | admin | Open a new branch |
+| GET/POST/PUT | `/api/vehicles` | any / admin+manager+employee | Fleet records |
+| GET/POST/PUT | `/api/spare-parts` | any / admin | Parts catalog (company-wide) |
 | GET/POST | `/api/warehouse-locations` | any / admin | Bin layout |
-| POST | `/api/inventory/receive` | admin+employee | Inbound shipments |
-| PUT | `/api/inventory/stock-adjust` | admin | Manual stock correction |
+| POST | `/api/inventory/receive` | admin+manager+employee | Inbound shipments |
+| PUT | `/api/inventory/stock-adjust` | admin+manager | Manual stock correction |
 | GET | `/api/inventory/low-stock` | any | Reorder alert feed |
 | GET | `/api/inventory/search` | any | Compatibility matrix |
 | POST | `/api/orders/pick-list` | any | Generate a picking route |
-| GET/POST | `/api/purchase-orders` | any / admin+employee | PO tracking |
+| GET/POST | `/api/purchase-orders` | any / admin+manager+employee | PO tracking |
+| PUT | `/api/purchase-orders/:id/approve` | admin+manager | Approve a submitted PO |
+| PUT | `/api/purchase-orders/:id/cancel` | admin+manager | Cancel a PO |
 | GET | `/api/users` | admin | Staff list |
 | PUT | `/api/users/:id/deactivate` | admin | Disable a login |
 
