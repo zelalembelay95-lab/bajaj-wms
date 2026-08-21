@@ -1,18 +1,28 @@
-import { Search, BellRing, ClipboardList, Warehouse, Wifi, WifiOff, LayoutDashboard, Bike, PackageSearch, Users, LogOut } from "lucide-react";
+import { Search, BellRing, ClipboardList, Warehouse, Wifi, WifiOff, LayoutDashboard, Bike, PackageSearch, Users, LogOut, FileText, Building2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuth } from "../../context/AuthContext";
+import type { UserRole } from "../../types";
 
-export type ViewId = "dashboard" | "matrix" | "lowstock" | "picking" | "vehicles" | "parts" | "users";
+export type ViewId = "dashboard" | "matrix" | "lowstock" | "picking" | "vehicles" | "parts" | "users" | "purchaseOrders" | "branches";
 
-const NAV_ITEMS: { id: ViewId; label: string; icon: typeof Search; adminOnly?: boolean }[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "matrix", label: "Compatibility", icon: Search },
-  { id: "lowstock", label: "Low Stock", icon: BellRing },
-  { id: "picking", label: "Picking Slip", icon: ClipboardList },
-  { id: "vehicles", label: "Vehicles", icon: Bike },
-  { id: "parts", label: "Spare Parts", icon: PackageSearch, adminOnly: true },
-  { id: "users", label: "Staff Logins", icon: Users, adminOnly: true },
+const NAV_ITEMS: { id: ViewId; label: string; icon: typeof Search; roles: UserRole[] }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "executive", "manager", "employee"] },
+  { id: "matrix", label: "Compatibility", icon: Search, roles: ["admin", "executive", "manager", "employee"] },
+  { id: "lowstock", label: "Low Stock", icon: BellRing, roles: ["admin", "executive", "manager", "employee"] },
+  { id: "picking", label: "Picking Slip", icon: ClipboardList, roles: ["admin", "manager", "employee"] },
+  { id: "vehicles", label: "Vehicles", icon: Bike, roles: ["admin", "executive", "manager", "employee"] },
+  { id: "purchaseOrders", label: "Purchase Orders", icon: FileText, roles: ["admin", "executive", "manager", "employee"] },
+  { id: "parts", label: "Spare Parts", icon: PackageSearch, roles: ["admin"] },
+  { id: "branches", label: "Branches", icon: Building2, roles: ["admin"] },
+  { id: "users", label: "Staff Logins", icon: Users, roles: ["admin"] },
 ];
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Admin",
+  executive: "Executive",
+  manager: "Branch Manager",
+  employee: "Store Keeper",
+};
 
 interface AppShellProps {
   active: ViewId;
@@ -23,7 +33,7 @@ interface AppShellProps {
 
 export function AppShell({ active, onNavigate, isOnline, children }: AppShellProps) {
   const { user, logout } = useAuth();
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
+  const items = NAV_ITEMS.filter((item) => user && item.roles.includes(user.role));
   const mobileItems = items.slice(0, 4); // bottom bar stays uncluttered on small screens
 
   return (
@@ -36,7 +46,7 @@ export function AppShell({ active, onNavigate, isOnline, children }: AppShellPro
           </div>
           <div className="hidden lg:block">
             <p className="font-display text-sm font-semibold leading-tight">Bajaj WMS</p>
-            <p className="text-[11px] text-steel-400">Pune Distribution Center</p>
+            <p className="text-[11px] text-steel-400">{user?.branchCode ? "Addis Ababa - Main" : "All Branches"}</p>
           </div>
         </div>
 
@@ -51,7 +61,7 @@ export function AppShell({ active, onNavigate, isOnline, children }: AppShellPro
         <div className="mt-2 border-t border-graphite-700 pt-2">
           <div className="hidden px-1 pb-1 lg:block">
             <p className="truncate text-xs font-medium text-paper">{user?.name}</p>
-            <p className="truncate text-[11px] text-steel-500">{user?.role === "admin" ? "Admin" : "Employee"}</p>
+            <p className="truncate text-[11px] text-steel-500">{user ? (user.jobTitle || ROLE_LABELS[user.role]) : ""}</p>
           </div>
           <button
             onClick={logout}
@@ -71,7 +81,7 @@ export function AppShell({ active, onNavigate, isOnline, children }: AppShellPro
           </div>
           <div>
             <p className="font-display text-sm font-semibold leading-tight">Bajaj WMS</p>
-            <p className="text-[10px] text-steel-500">{user?.name}</p>
+            <p className="text-[10px] text-steel-500">{user?.name} · {user ? ROLE_LABELS[user.role] : ""}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
