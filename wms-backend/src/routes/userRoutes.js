@@ -6,11 +6,13 @@ const { asyncHandler, ApiError } = require("../middleware/errorHandler");
 const router = express.Router();
 router.use(requireAuth, requireRole("admin"));
 
-// GET /api/users
+// GET /api/users?branch=
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const users = await User.find().sort({ createdAt: -1 });
+    const filter = {};
+    if (req.query.branch) filter.branchCode = req.query.branch.toUpperCase();
+    const users = await User.find(filter).sort({ createdAt: -1 });
     res.json({ ok: true, users });
   })
 );
