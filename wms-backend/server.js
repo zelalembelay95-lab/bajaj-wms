@@ -5,6 +5,7 @@ const { connectDB } = require("./src/config/db");
 const { errorHandler } = require("./src/middleware/errorHandler");
 
 const authRoutes = require("./src/routes/authRoutes");
+const branchRoutes = require("./src/routes/branchRoutes");
 const userRoutes = require("./src/routes/userRoutes");
 const vehicleRoutes = require("./src/routes/vehicleRoutes");
 const sparePartRoutes = require("./src/routes/sparePartRoutes");
@@ -28,6 +29,7 @@ app.use(express.json({ limit: "1mb" }));
 app.get("/healthz", (req, res) => res.json({ ok: true, service: "bajaj-wms-backend" }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/branches", branchRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/spare-parts", sparePartRoutes);
