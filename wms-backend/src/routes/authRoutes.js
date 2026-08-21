@@ -1,6 +1,7 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Branch = require("../models/Branch");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { asyncHandler, ApiError } = require("../middleware/errorHandler");
 
@@ -45,12 +46,23 @@ router.post(
   requireAuth,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, jobTitle, branchCode } = req.body;
     if (!name || !email || !password) {
       throw new ApiError(400, "name, email, and password are required", "BAD_REQUEST");
     }
-    if (role && !["admin", "employee"].includes(role)) {
-      throw new ApiError(400, "role must be 'admin' or 'employee'", "BAD_REQUEST");
+    if (role && !User.ROLES.includes(role)) {
+      throw new ApiError(400, `role must be one of: ${User.ROLES.join(", ")}`, "BAD_REQUEST");
+    }
+
+    const resolvedRole = role || "employee";
+    const needsBranch = User.BRANCH_SCOPED_ROLES.includes(resolvedRole);
+
+    if (needsBranch) {
+      if (!branchCode) {
+        throw new ApiError(400, `branchCode is required for role "${resolvedRole}"`, "BAD_REQUEST");
+      }
+      const branch = await Branch.findOne({ code: branchCode.toUpperCase(), isActive: true });
+      if (!branch) throw new ApiError(400, `Unknown branch code "${branchCode}"`, "BAD_BRANCH");
     }
 
     const passwordHash = await User.hashPassword(password);
@@ -58,7 +70,9 @@ router.post(
       name,
       email: email.toLowerCase().trim(),
       passwordHash,
-      role: role || "employee",
+      role: resolvedRole,
+      jobTitle,
+      branchCode: needsBranch ? branchCode.toUpperCase() : null,
     });
 
     res.status(201).json({ ok: true, user });
