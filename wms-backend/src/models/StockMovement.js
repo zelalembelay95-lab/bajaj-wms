@@ -5,6 +5,7 @@ const stockMovementSchema = new mongoose.Schema(
     snapshotId: { type: mongoose.Schema.Types.ObjectId, ref: "InventorySnapshot", required: true, index: true },
     sku: { type: String, required: true },
     locationCode: { type: String, required: true },
+    branchCode: { type: String, required: true, index: true },
     reasonCode: {
       type: String,
       required: true,
